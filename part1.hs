@@ -19,71 +19,59 @@ pp xs = putStrLn $ prettyList xs
 
 -- AoC 2025 - Day 11 - Part One - solution code
 
-data StrNode = StrNode String [String]
+data Node = Node String [String]
   deriving (Eq,Show)
 
-data Path = Path [String]
-  deriving (Eq)
+type Path = String
 
-instance Show Path where
-  show (Path ps) = foldl1 (\x y -> x ++ " " ++ y) ps
-
-processLine :: String -> StrNode
+processLine :: String -> Node
 processLine s = newNode where
   myTokens = words s
   myName = (init . head) myTokens
   myOutputs = tail myTokens
-  newNode = StrNode myName myOutputs
+  newNode = Node myName myOutputs
 
-justNames :: [StrNode] -> [String]
+justNames :: [Node] -> [String]
 justNames [] = []
-justNames ((StrNode name outs):ns) = [name] ++ justNames ns
+justNames ((Node name outs):ns) = [name] ++ justNames ns
 
-justOuts :: [StrNode] -> [String]
+justOuts :: [Node] -> [String]
 justOuts [] = []
-justOuts ((StrNode name outs):ns) = union outs (justOuts ns)
+justOuts ((Node name outs):ns) = union outs (justOuts ns)
 
-originNode :: [StrNode] -> String
+originNode :: [Node] -> String
 originNode ns = head $ (justNames ns) \\ (justOuts ns)
 
 -- fortunately, both the example data set and the big data set
 -- have one origin node and only one dead-end node ("out")
 
-initialPath :: [StrNode] -> [Path]
-initialPath nodes = [Path [originNode nodes]]
+nodeToPaths :: Node -> [String]
+nodeToPaths (Node name kids) = map (\x -> name ++ " " ++ x) kids
 
-checkComplete :: Path -> Bool
-checkComplete (Path ns) = last ns == "out"
+expandNode :: String -> [Node] -> [String]
+expandNode _ [] = []
+expandNode target ((Node name kids):ns)
+  | target == name = nodeToPaths (Node name kids)
+  | otherwise = expandNode target ns
 
-checkPaths :: [Path] -> [StrNode] -> [Path]
-checkPaths ps nodes
-  | all checkComplete ps = ps
-  | otherwise = checkPaths (expandPaths ps nodes) nodes
+isComplete :: Path -> Bool
+isComplete thisPath = last (words thisPath) == "out"
 
-expandPaths :: [Path] -> [StrNode] -> [Path]
-expandPaths [] _ = []
-expandPaths (p:ps) nodes
-  | checkComplete p = expandPaths ps nodes
-  | otherwise = (grow p nodes) ++ expandPaths ps nodes
+allButLast :: Path -> Path
+allButLast p = foldl1 (\x y -> x ++ " " ++ y) (init $ words p)
 
-grow :: Path -> [StrNode] -> [Path]
-grow p nodes = newPaths where
-  (Path pathStrs) = p
-  lastItem = last pathStrs
-  nextLayer = getChildren lastItem nodes
-  newPaths = map (graft p) nextLayer
+growPath :: Path -> [Node] -> [Path]
+growPath p myNodes
+  | isComplete p = [p]
+  | otherwise = map (\x -> allButLast p ++ " " ++ x) (expandNode (last $ words p) myNodes) 
 
-graft :: Path -> String -> Path
-graft (Path names) name = Path (names ++ [name])
-
-getChildren :: String -> [StrNode] -> [String]
-getChildren _ [] = []
-getChildren name ((StrNode n kids):ns)
-  | name == n = kids
-  | otherwise = getChildren name ns
+recursePaths :: [Path] -> [Node] -> [Path]
+recursePaths ps myNodes
+  | all isComplete ps = ps
+  | otherwise = recursePaths (concatMap (\x -> growPath x myNodes) ps) myNodes
 
 main = do
-  myFile <- readFile "exdata11.txt"
+  myFile <- readFile "data11.txt"
   let myData = map processLine $ lines myFile
-
-  pp $ myData
+  
+  print $ length $ recursePaths (expandNode "you" myData) myData
