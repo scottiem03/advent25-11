@@ -1,16 +1,8 @@
 import Data.List
 
-data Tree = Node String [Tree]
-  deriving (Eq,Show)
-
-getName :: Tree -> String
-getName (Node name _) = name
-
-getLinks :: Tree -> [Tree]
-getLinks (Node _ links) = links
+-- utility functions
 
 split :: Char -> String -> [String]
--- my usual split string function
 split _ "" = []
 split c s = [thisPart] ++ split c restOfString where
   (thisPart,tooLong) = break (==c) s
@@ -22,42 +14,76 @@ prettyList :: (Show a) => [a] -> String
 prettyList [] = ""
 prettyList (x:xs) = (show x) ++ "\n" ++ prettyList xs
 
-processLine :: String -> Tree
-processLine s = Node thisName links where
-  [thisName,restOfString] = split ':' s
-  links = map (\x -> Node x []) (words restOfString)
+pp :: (Show a) => [a] -> IO ()
+pp xs = putStrLn $ prettyList xs
 
-buildTree :: Tree -> [Tree] -> Tree
-buildTree oldTree [] = oldTree
-buildTree startNode (t:ts) = buildTree (graft startNode t) ts
+-- AoC 2025 - Day 11 - Part One - solution code
 
-graft :: Tree -> Tree -> Tree
-graft (Node startName startKids) (Node newName newKids)
-  | startName == newName = Node startName (startKids ++ newKids)
-  | otherwise = Node startName (map (\x -> graft x (Node newName newKids)) startKids)
+data StrNode = StrNode String [String]
+  deriving (Eq,Show)
 
-showTree :: Int -> Tree -> String
-showTree n (Node name kids) =
-  (take n $ repeat ' ') ++ name ++ "\n" ++ (concatMap (showTree (n+1)) kids)
+data Path = Path [String]
+  deriving (Eq)
 
-getYouTrees :: Tree -> [Tree]
-getYouTrees (Node name kids)
-  | name == "you" = [Node name kids]
-  | otherwise = concatMap getYouTrees kids
+instance Show Path where
+  show (Path ps) = foldl1 (\x y -> x ++ " " ++ y) ps
 
-countOuts :: Tree -> Int
-countOuts (Node name kids)
-  | name == "out" = 1
-  | kids == [] = 0
-  | otherwise = foldl1 (+) $ map countOuts kids
+processLine :: String -> StrNode
+processLine s = newNode where
+  myTokens = words s
+  myName = (init . head) myTokens
+  myOutputs = tail myTokens
+  newNode = StrNode myName myOutputs
+
+justNames :: [StrNode] -> [String]
+justNames [] = []
+justNames ((StrNode name outs):ns) = [name] ++ justNames ns
+
+justOuts :: [StrNode] -> [String]
+justOuts [] = []
+justOuts ((StrNode name outs):ns) = union outs (justOuts ns)
+
+originNode :: [StrNode] -> String
+originNode ns = head $ (justNames ns) \\ (justOuts ns)
+
+-- fortunately, both the example data set and the big data set
+-- have one origin node and only one dead-end node ("out")
+
+initialPath :: [StrNode] -> [Path]
+initialPath nodes = [Path [originNode nodes]]
+
+checkComplete :: Path -> Bool
+checkComplete (Path ns) = last ns == "out"
+
+checkPaths :: [Path] -> [StrNode] -> [Path]
+checkPaths ps nodes
+  | all checkComplete ps = ps
+  | otherwise = checkPaths (expandPaths ps nodes) nodes
+
+expandPaths :: [Path] -> [StrNode] -> [Path]
+expandPaths [] _ = []
+expandPaths (p:ps) nodes
+  | checkComplete p = expandPaths ps nodes
+  | otherwise = (grow p nodes) ++ expandPaths ps nodes
+
+grow :: Path -> [StrNode] -> [Path]
+grow p nodes = newPaths where
+  (Path pathStrs) = p
+  lastItem = last pathStrs
+  nextLayer = getChildren lastItem nodes
+  newPaths = map (graft p) nextLayer
+
+graft :: Path -> String -> Path
+graft (Path names) name = Path (names ++ [name])
+
+getChildren :: String -> [StrNode] -> [String]
+getChildren _ [] = []
+getChildren name ((StrNode n kids):ns)
+  | name == n = kids
+  | otherwise = getChildren name ns
 
 main = do
-  myFile <- readFile "data11.txt"
+  myFile <- readFile "exdata11.txt"
   let myData = map processLine $ lines myFile
 
-  let myTree = buildTree (head myData) (tail myData)
-  
-  --let youTree = head $ getYouTrees myTree
-  
-  putStrLn $ showTree 0 $ myTree
-  --print $ countOuts youTree
+  pp $ myData
