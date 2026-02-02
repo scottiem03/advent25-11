@@ -17,76 +17,82 @@ prettyList (x:xs) = (show x) ++ "\n" ++ prettyList xs
 pp :: (Show a) => [a] -> IO ()
 pp xs = putStrLn $ prettyList xs
 
+lookupSrt :: (Ord a) => a -> [(a,b)] -> b
+lookupSrt target list
+  | target == midPoint = midCargo
+  | target < midPoint = lookupSrt target firstHalf
+  | target > midPoint = lookupSrt target secondHalf
+  where
+    midIndex = div (length list) 2
+    midPoint = fst $ list !! midIndex
+    midCargo = snd $ list !! midIndex
+    (firstHalf,secondHalf) = splitAt midIndex list
+    
+
 -- AoC 2025 - Day 11 - Part One - solution code
 
-data Node = Node String [String]
+data Graph = Node String [Graph] | Out
   deriving (Eq,Show)
 
-type Path = String
-
-processLine :: String -> Node
-processLine s = newNode where
+processLine :: String -> (String,[String])
+processLine s = (name,kids) where
   myTokens = words s
-  myName = (init . head) myTokens
-  myOutputs = tail myTokens
-  newNode = Node myName myOutputs
+  name = (init . head) myTokens
+  kids = tail myTokens
 
-justNames :: [Node] -> [String]
-justNames [] = []
-justNames ((Node name outs):ns) = [name] ++ justNames ns
+findStrKids :: String -> [(String,[String])] -> [String]
+findStrKids target list = lookupSrt target list
 
-justOuts :: [Node] -> [String]
-justOuts [] = []
-justOuts ((Node name outs):ns) = union outs (justOuts ns)
+buildGraph :: Graph -> [(String,[String])] -> Graph
+buildGraph Out _ = Out
+buildGraph (Node name kids) myMap = Node name (map (\x -> buildGraph x myMap) newKids) where
+  kidNames = findStrKids name myMap
+  newKids = map (\x -> case x of "out" -> Out; _ -> Node x []) kidNames
 
-originNode :: [Node] -> String
-originNode ns = head $ (justNames ns) \\ (justOuts ns)
+buildGraphTo :: String -> Graph -> [(String,[String])] -> Graph
+buildGraphTo _ Out _ = Out
+buildGraphTo target (Node name kids) _
+  | target == name = (Node name [])
+buildGraphTo target (Node name kids) myMap = Node name (map (\x -> buildGraphTo target x myMap) newKids) where
+  kidNames = findStrKids name myMap
+  newKids = map (\x -> case x of "out" -> Out; _ -> Node x []) kidNames
 
--- fortunately, both the example data set and the big data set
--- have one origin node and only one dead-end node ("out")
+cleanUp :: String -> Graph -> Graph
+cleanUp _ Out = Out
+cleanUp target (Node name kids) = Node name (filter (leadsTo target) kids)
 
-nodeToPaths :: Node -> [String]
-nodeToPaths (Node name kids) = map (\x -> name ++ " " ++ x) kids
+leadsTo :: String -> Graph -> Bool
+leadsTo _ Out = False
+leadsTo target (Node name kids)
+  | target == name = True
+  | otherwise = foldl1 (||) (map (leadsTo target) kids)
 
-expandNode :: String -> [Node] -> [String]
-expandNode _ [] = []
-expandNode target ((Node name kids):ns)
-  | target == name = nodeToPaths (Node name kids)
-  | otherwise = expandNode target ns
+getName :: Graph -> String
+getName Out = "out"
+getName (Node name kids) = name
 
-isComplete :: Path -> String -> Bool
-isComplete thisPath target = last (words thisPath) == target
+findKidByName :: String -> [Graph] -> Graph
+findKidByName _ [] = error "kid not found"
+findKidByName name (k:ks)
+  | getName k == name = k
+  | otherwise = findKidByName name ks
 
-allButLast :: Path -> Path
-allButLast p = foldl1 (\x y -> x ++ " " ++ y) (init $ words p)
+-- numPathsBetween :: String -> String -> [(String,[String])]
 
-growPath :: Path -> String -> [Node] -> [Path]
-growPath p target myNodes
-  | isComplete p target = [p]
-  | otherwise = map (\x -> allButLast p ++ " " ++ x) (expandNode (last $ words p) myNodes) 
-
-recursePaths :: [Path] -> String -> [Node] -> [Path]
-recursePaths ps target myNodes
-  | all (\x -> isComplete x target) ps = ps
-  | otherwise = recursePaths (concatMap (\x -> growPath x target myNodes) ps) target myNodes
-
-justDacFft :: Path -> Bool
-justDacFft p = (elem "dac" $ wordList) && (elem "fft" $ wordList) where
-  wordList = words p
-
--- recursePathsIO :: [Path] -> [Node] -> IO [Path]
--- recursePathsIO ps myNodes
---   | all isComplete ps = return ps
---   | otherwise = do
---       let nextLayer = concatMap (\x -> growPath x myNodes) ps
---       pp nextLayer
---       recursePathsIO (nextLayer) myNodes
-
-pathsBetween :: String -> String -> [Node] -> [Path]
-pathsBetween x y myNodes = recursePaths (expandNode x myNodes) y myNodes
+pathsTo :: String -> Graph -> Int
+pathsTo _ Out = 0
+pathsTo target (Node name kids)
+  | target == name = 1
+  | otherwise = sum $ map (pathsTo target) kids
 
 main = do
-  myFile <- readFile "data11.txt"
-  let myData = map processLine $ lines myFile
-  
-  pp $ pathsBetween "svr" "fft" myData
+  myFile <- readFile "exdata11.txt"
+  let myData = sort $ map processLine $ lines myFile
+
+  pp myData
+
+  let myGraph = buildGraph (Node "svr" []) myData
+
+  print $ myGraph
+
+  print $ pathsTo "dac" myGraph
